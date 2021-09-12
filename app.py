@@ -1,15 +1,38 @@
 from flask import Flask, request
 from flask_restful import Resource, Api
+from sqlalchemy.sql.expression import delete
 from werkzeug.wrappers import response
-from models import Pessoas, Atividades
+from models import Pessoas, Atividades, Usuarios
+from flask_httpauth import HTTPBasicAuth
 
+auth = HTTPBasicAuth()
 app = Flask(__name__)
 api = Api(app)
 
+"""
+USUARIOS = {
+    'Klider':'123',
+    'Gabriel': '123',
+    'Daniel': '123'
+}
+
+@auth.verify_password
+def verificacao(login, senha):
+    if not (login, senha):
+        return False
+    return USUARIOS.get(login) == senha
+"""
+@auth.verify_password
+def verificacao(login, senha):
+    if not (login, senha):
+        return False
+    return Usuarios.query.filter_by(login=login, senha=senha).first()
+
 class Pessoa(Resource):
+    @auth.login_required
     def get(self, nome):
-        pessoa = Pessoas.query.filter_by(nome=nome).first()
         try:
+            pessoa = Pessoas.query.filter_by(nome=nome).first()
             response = {
                 'nome': pessoa.nome,
                 'idade': pessoa.idade,
@@ -23,27 +46,40 @@ class Pessoa(Resource):
         return response
 
     def put(self, nome):
-        pessoa = Pessoas.query.filter_by(nome=nome).first()
-        dados = request.json
-        if 'nome' in dados:
-            pessoa.nome = dados['nome']
-            pessoa.save()
-        if 'idade' in dados:
-            pessoa.idade = dados['idade']
-            pessoa.save()
-        response = {
-            'id':pessoa.id,
-            'nome':pessoa.nome,
-            'idade':pessoa.idade
-        }
+        try:
+            pessoa = Pessoas.query.filter_by(nome=nome).first()
+            dados = request.json
+            if 'nome' in dados:
+                pessoa.nome = dados['nome']
+                pessoa.save()
+            if 'idade' in dados:
+                pessoa.idade = dados['idade']
+                pessoa.save()
+            response = {
+                'id':pessoa.id,
+                'nome':pessoa.nome,
+                'idade':pessoa.idade
+            }
+        except AttributeError:
+            response = {
+                'status': "Error",
+                'message': "Pessoa não cadastrada"
+            }
         return response
+
     def delete(self, nome):
-        pessoa = Pessoas.query.filter_by(nome=nome).first()
-        pessoa.delete()
-        response = {
-            'status': "Sucesso",
-            'message': "A Pessoa {} foi excluida com sucesso".format(nome)
-        }
+        try:
+            pessoa = Pessoas.query.filter_by(nome=nome).first()
+            pessoa.delete()
+            response = {
+                'status': "Sucesso",
+                'message': "A Pessoa {} foi excluida com sucesso".format(nome)
+            }
+        except AttributeError:
+            response = {
+                'status': "Error",
+                'message': "Pessoa não cadastrada"
+            }
         return response
 
 class Pessoas2(Resource):
@@ -92,7 +128,8 @@ class ListaAtividades (Resource):
             {
                 'id': i.id,
                 'pessoa': i.pessoa.nome,
-                'nome': i.nome
+                'nome': i.nome,
+                'status': i.status
             }
             for i in atividades
         ]
@@ -101,19 +138,100 @@ class ListaAtividades (Resource):
     def post(self):
         dados = request.json
         pessoa = Pessoas.query.filter_by(nome=dados['pessoa']).first()
-        atividade = Atividades(nome=dados['nome'], pessoa=pessoa)
+        atividade = Atividades(nome=dados['nome'], status=dados['status'],pessoa=pessoa)
         atividade.save()
         response = {
             'pessoa':atividade.pessoa.nome,
             'nome':atividade.nome,
-            'id':atividade.id
+            'id':atividade.id,
+            'status':atividade.status
         }
         return response
 
+class Atividadesinhas (Resource):
+    def get(self, nome):
+        try:
+            pessoa = Pessoas.query.filter_by(nome=nome).first()
+            atividade = Atividades.query.filter_by(pessoa=pessoa)
+            response = [
+            {
+                'id': i.id,
+                'pessoa': i.pessoa.nome,
+                'nome': i.nome,
+                'status': i.status
+            }
+            for i in atividade
+            ]
+        except AttributeError:
+            response = {
+                'status': "Error",
+                'message': "Pessoa/atividade não cadastrada"
+            }
+        return response
+
+class Atividadesinhas2 (Resource):
+    @auth.login_required
+    def get(self, id):
+        try:
+            atividade = Atividades.query.filter_by(id=id)
+            response = [
+            {
+                'id': i.id,
+                'pessoa': i.pessoa.nome,
+                'nome': i.nome,
+                'status': i.status
+            }
+            for i in atividade
+            ]
+        except AttributeError:
+            response = {
+                'status': "Error",
+                'message': "Não existe nenhuma atividade com esse ID"
+            }
+        return response
+
+    def delete(self, id):
+        try:
+            atividade = Atividades.query.filter_by(id=id).first()
+            atividade.delete()
+            response = {
+                'status': "Sucesso",
+                'message': "A atividade com o index {} foi excluida com sucesso".format(id)
+            }
+        except AttributeError:
+            response = {
+            'status': "Erro",
+            'message': "Não existe nenhuma atividade com esse ID"
+            }
+        return response
+        
+
+    def put(self, id):
+        try:
+            atividade = Atividades.query.filter_by(id=id).first()
+            dados = request.json
+            if 'status' in dados:
+                atividade.status = dados['status']
+                atividade.save()
+            response = {
+                    'id': atividade.id,
+                    'pessoa': atividade.pessoa.nome,
+                    'nome': atividade.nome,
+                    'status': atividade.status
+                }
+        except AttributeError:
+            response = {
+            'status': "Erro",
+            'message': "Não existe nenhuma atividade com esse ID"
+            }
+        return response
 
 api.add_resource(Pessoa, '/pessoa/<string:nome>')
 api.add_resource(Pessoas2, '/pessoa')
 api.add_resource(ListaAtividades, '/atividades')
+api.add_resource(Atividadesinhas, '/atividades/<string:nome>')
+api.add_resource(Atividadesinhas2, '/atividades/<int:id>')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
